@@ -1,0 +1,12 @@
+{
+ "qwen": {
+  "positions": 1024,
+  "reference_exact": 1024,
+  "min_gap_over_bound": 56918737.653865226
+ },
+ "tinyllama": {
+  "positions": 1024,
+  "reference_exact": 1024,
+  "min_gap_over_bound": 11793633.234838476
+ }
+}

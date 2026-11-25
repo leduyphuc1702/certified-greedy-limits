@@ -1,0 +1,55 @@
+\section{Oracle Ceiling}
+\label{sec:oracle-ceiling}
+
+Let $W\in\mathbb{R}^{V\times d}$ be the unchanged output projection, with rows $w_i^\top$. For a fixed token prefix, let $h$ and $\hat h$ be the reference and low-precision hidden states after the final normalization layer. All decisions in this section use exact-real inner products with deterministic tie-breaking. Define the coarse candidate $t=\arg\max_i w_i^\top\hat h$, difference vectors $D_j=w_t-w_j$, and margins $m_j=D_j^\top\hat h\geq0$ for $j\neq t$.
+
+For $r\in\mathbb{R}_{\geq0}^d$, define the symmetric coordinate-wise uncertainty box
+\[
+    \mathcal B(\hat h,r)
+    =\{\hat h+\delta:|\delta_k|\leq r_k,\ \forall k\}.
+\]
+The radius is valid if $h\in\mathcal B(\hat h,r)$, equivalently $r\geq|h-\hat h|$ coordinate-wise. A sound strict box certificate accepts only when the candidate uniquely maximizes the logits throughout the box:
+\begin{equation}
+    D_j^\top x>0,\qquad
+    \forall x\in\mathcal B(\hat h,r),\quad\forall j\neq t.
+    \label{eq:strict-box-certificate}
+\end{equation}
+Define the oracle radius $r^\star=|h-\hat h|$. It requires reference computation and therefore serves as a diagnostic, not a deployable inference algorithm.
+
+\begin{theorem}[Oracle ceiling]
+\label{thm:oracle-ceiling}
+For fixed $W,h,\hat h$ and $t$, the exact minimum margin over a symmetric box is
+\begin{equation}
+    B_j(r):=\min_{x\in\mathcal B(\hat h,r)}D_j^\top x
+    =m_j-|D_j|^\top r.
+    \label{eq:exact-box-margin}
+\end{equation}
+Every valid radius satisfies
+\[
+    \mathcal B(\hat h,r^\star)\subseteq\mathcal B(\hat h,r),
+    \qquad B_j(r)\leq B_j(r^\star).
+\]
+Consequently, on any fixed evaluation set, every sound certificate satisfying Eq.~\eqref{eq:strict-box-certificate} has a certification rate no greater than that of the mathematical oracle.
+\end{theorem}
+
+\begin{proof}
+For $x=\hat h+\delta$ in the box,
+\[
+    D_j^\top x=m_j+\sum_kD_{jk}\delta_k
+    \geq m_j-\sum_k|D_{jk}|r_k.
+\]
+Equality is attained at $\delta_k=-r_k\operatorname{sign}(D_{jk})$, proving Eq.~\eqref{eq:exact-box-margin}. Validity requires $r_k\geq r_k^\star$ for every coordinate, proving box inclusion and margin dominance. Thus, if a valid box satisfies $B_j(r)>0$ for all competitors, the oracle also satisfies $B_j(r^\star)>0$. The acceptance indicator of any sound strict box certificate is therefore bounded pointwise by the oracle indicator. Averaging over the evaluation positions proves the certification-rate inequality, without distributional or independence assumptions.
+\end{proof}
+
+\paragraph{Headroom.}
+Let $a_j=|D_j|^\top r^\star$ and define
+\begin{equation}
+    s^\star=\min_{j\neq t:\,a_j>0}\frac{m_j}{a_j},
+    \label{eq:headroom}
+\end{equation}
+where the minimum of an empty set is $+\infty$. For a scaled radius $\alpha r^\star$, $\alpha\geq0$, the worst-case margin is $m_j-\alpha a_j$. Provided every zero-slack competitor has $m_j>0$, strict certification holds exactly when $\alpha<s^\star$. In particular, $s^\star<1$ implies that the oracle box contains a point where a competitor strictly exceeds $t$. No valid symmetric box with the same center can then certify $t$, even with tie-breaking. For $0<s^\star<1$, $1/s^\star$ is the limiting uniform radius-reduction factor needed to reach the certification boundary. Such a reduction violates validity because $r^\star$ is already coordinate-wise minimal.
+
+\paragraph{Scope and numerical evaluation.}
+The theorem fixes the quantization scheme, both numerical executions, the coarse hidden-state center, the coordinate basis, and the output projection. It does not exclude asymmetric or rotated sets, correlated-error bounds, alternative quantizers, directional certificates, selective recomputation, or additional information restricting reachable states within the box. Strict-margin failure at equality also need not exclude a tie-aware certificate.
+
+The mathematical oracle is distinct from its floating-point implementation. A guarded positive lower bound proves acceptance; a nonpositive upper bound for any competitor proves strict-certificate failure. Numerically unresolved positions must be refined or reported separately. If $N_+$ positions are certified and $N_?$ remain unresolved out of $N$, the mathematical oracle rate lies in $[N_+/N,(N_++N_?)/N]$. Only the upper endpoint is a sound empirical ceiling for the entire certificate family.

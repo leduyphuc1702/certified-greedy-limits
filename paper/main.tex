@@ -1,0 +1,278 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{corollary}{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+
+\title{Feasibility Limits of Certified Low-Precision Greedy Decoding:\\
+A Preregistered Study with an Oracle Ceiling}
+\author{Phuc Le\\Independent researcher}
+\date{November 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Lossless inference schemes for large language models (LLMs) often hope to compute
+most of the work in low precision and to \emph{certify}, with a deterministic bound,
+that the greedy token is unchanged. We test this hope with kill-tests whose pass
+thresholds were written down before each experiment, on two pretrained models
+(Qwen2.5-0.5B-Instruct and TinyLlama-1.1B-Chat) and 1{,}024 held-out decoding
+positions each. Three families miss their feasibility thresholds by wide margins.
+(i) Coordinate-wise error boxes at the final hidden state: after dropping four
+mantissa bits, the coarse argmax already agrees with the reference at 92--97\% of
+positions, yet even an \emph{oracle} that knows the true error certifies only
+4.7\%/12.1\% (truncation) and 18.6\%/26.5\% (rounding), against a 95\% target. We
+show that no sound certificate of this family with the same center can exceed the
+oracle, and we verify every oracle decision with rigorous floating-point
+enclosures (zero unresolved positions), so the ceiling is established on these
+data. (ii) Exact maximum inner product search over the LM head with cluster bounds
+reads 107--111\% of the head's logical bytes. (iii) Dimension-adaptive tail-norm
+pruning, in a calibrated order or in an SVD basis, still reads 83--100\%. As a side
+result, the native BF16 LM head on Apple MPS disagrees with the exact-real argmax
+of the same hidden state at 0.88\% of positions. A candidate certificate that is
+sound under a stated arithmetic model recovers the exact token at every position;
+with FP32 output it needs refinement at 0.68\% (Qwen) and 1.76\% (TinyLlama) of
+positions, meeting the 1\% refinement criterion for one model only. Latency was
+not evaluated. Code, preregistrations and raw results are released.
+\end{abstract}
+
+\section{Introduction}
+Low-precision inference trades exactness for speed. Several lines of work try to
+keep the speed while restoring exactness: lossless weight compression
+\cite{zhang2025dfloat11,hershcovitch2025zipnn}, self-speculative decoding with a
+quantized draft verified by the full model
+\cite{zhao2025qspec,tiwari2025quantspec,zhao2025speq}, and fast search over the
+output vocabulary \cite{loretz2026output}. A tempting further step is to skip
+verification altogether: compute in low precision, then prove with a cheap
+deterministic bound that the greedy decision could not have changed.
+
+This paper reports what happened when we tried. An earlier prototype of ours
+certified every intermediate rounding cell of a synthetic Transformer and accepted
+zero of 6.5 million trunk rows. We therefore moved the certificate to the only place
+where a decision is made, the greedy argmax, and asked three questions, each with a
+pass threshold fixed in advance:
+\begin{enumerate}
+\item Can a coordinate-wise error box on the final hidden state certify the greedy
+token for most positions? (Section~\ref{sec:oracle-ceiling})
+\item Can exact search over the LM head certify the greedy token while reading a
+small fraction of its weights? (Section~\ref{sec:results})
+\item Can the native low-precision LM head be made provably exact with rare
+refinement? (Section~\ref{sec:certified-head})
+\end{enumerate}
+The answers are no, no, and partially. Our contributions are:
+\begin{itemize}
+\item an oracle diagnostic that turns one cheap experiment into a bound on a whole
+family of certification methods (Theorem~\ref{thm:oracle-ceiling}); the underlying
+box optimization is standard, the use as a feasibility test is ours;
+\item preregistered negative results on two pretrained models, with prompt-level
+bootstrap intervals, an audited exact reference, and rigorous verification of the
+oracle decisions;
+\item a greedy-head certificate with zero observed errors, and the measurement
+that its refinement rate is dominated by BF16 output rounding.
+\end{itemize}
+
+\input{related}
+
+\input{oracle}
+
+\section{Preregistered methodology}
+\label{sec:method}
+\paragraph{Process.} Each test has a written preregistration with its pass
+thresholds, written before the corresponding experiment and released verbatim. The
+files were kept privately and not publicly timestamped at the time, so their
+precedence rests on our record rather than on an external registry. We distinguish three
+kinds of evidence: development runs (256 positions of Qwen2.5-0.5B-Instruct), the
+preregistered held-out replication reported in Table~\ref{tab:main} (new prompts
+and a second model), and exploratory diagnostics, which are labeled as such.
+Thresholds were never changed after a run. Criteria that were not run because the
+preregistered stopping rule ended a line of work are reported as not evaluated.
+
+\paragraph{Models and data.} Qwen2.5-0.5B-Instruct (tied head, $V{=}151{,}936$,
+$d{=}896$) and TinyLlama-1.1B-Chat-v1.0 ($V{=}32{,}000$, $d{=}2{,}048$), original
+BF16 weights. Held-out prompts: WikiText-2 test paragraphs \#16--\#79 (at least 40
+words, no headings) and GSM8K test questions \#16--\#79 in each model's chat
+template, truncated to 48 tokens. The reference model generates 8 greedy tokens per
+prompt with end-of-sequence suppressed, giving 1{,}024 positions per model.
+Calibration data, used only to order coordinates in v21b, come from WikiText-2
+validation and GSM8K train. Hidden states are taken after the final RMSNorm.
+Forward passes run on Apple M4 (PyTorch MPS); certificates are evaluated in FP64
+on CPU.
+
+\paragraph{Coarse model (v20).} The coarse model uses the same weights except that
+every linear projection inside the Transformer blocks (query, key, value, output,
+gate, up and down) keeps only the top 3 of the 7 explicit BF16 mantissa bits, by
+truncation or by round-to-nearest with ties rounded away from zero in magnitude.
+Embeddings, normalization weights and the LM head are unchanged. Reference and
+coarse model are both run teacher-forced on the same token sequence (prompt plus
+the reference's 8 greedy tokens) in independent forward passes, so the two hidden
+states at a position share the same prefix.
+
+\paragraph{Search methods (v21).} \emph{v21a} is a binary tree over the rows of
+$W$, split at the median of the highest-variance coordinate down to leaves of at
+most 64 rows. Each node stores an FP32 centroid $c$, a ball radius $R$, and radii
+$R_g$ for 8 contiguous coordinate blocks; its upper bound on $w_i^\top h$ is
+$c^\top h+\min(R\|h\|_2,\sum_g R_g\|h_g\|_2)$. Nodes are visited best-first until
+the bound falls below the best exact logit found. \emph{v21b} orders coordinates by
+the calibration energy $\mathbb{E}[h_k^2]\sum_i w_{ik}^2$ and accumulates partial
+inner products at checkpoints $64,128,256,\dots,d$. At each checkpoint $P$, a row
+survives while $s_i^{(P)}+\|w_{i,>P}\|_2\|h_{>P}\|_2\geq L$, where the incumbent $L$
+is the exact logit of the current partial leader (its tail is read and counted).
+\emph{v21c} applies the same procedure after rotating rows and query into the
+eigenbasis of $W^\top W$ (the right singular vectors of $W$), in decreasing
+eigenvalue order. It is an SVD-based ablation inspired by FEXIPRO
+\cite{li2017fexipro}, not a reproduction of it: integer approximation and the other
+FEXIPRO components are omitted, and the rotated coordinates are generously counted at
+2 bytes each with the query rotation not counted.
+
+\paragraph{Byte accounting.} $\rho$ is the number of logical bytes read (BF16
+weights at 2 bytes per coordinate, 4 bytes per tail norm or row index, $4d+44$ bytes
+per tree node) divided by the bytes of one dense pass, $2Vd$. This counts logical
+accesses, not measured DRAM traffic; $\rho>1$ means more than a dense pass.
+
+\paragraph{Numerical soundness.} The exact reference is the exact-real argmax of
+$Wh$. We compute $Wh$ in FP64 and verify at every position that the FP64 gap between
+the top token and every rival exceeds the sum of their error bounds
+$\gamma^{(64)}_d\sum_k|w_kh_k|$. This holds at 2{,}048/2{,}048 positions, with the
+smallest gap more than $10^7$ times the bound. For v20, every accepted and rejected
+position is re-verified with enclosures on the FP64 dot products (differences of
+BF16 values are exact in FP64): a position counts as rejected only if some competitor
+has a provably nonpositive margin upper bound. For v21a/b, the bounds include a
+relative guard of $10^{-9}$, tree radii are inflated by a relative $10^{-6}$, and
+tail norms are rounded upward by at least half an FP32 ulp, all several orders of magnitude above the FP64 rounding error of
+the quantities they protect. Final tokens of all v21 runs matched the exact
+reference. Any further conservatism can only enlarge bounds and keep rows alive
+longer, so it cannot lower $\rho$; the fail verdicts are therefore robust to these
+details. v21c has no enclosure for the rotation error and is an optimistic
+screening experiment, which again can only flatter its $\rho$.
+
+\paragraph{Statistics.} Rates are means over positions with 95\% intervals from a
+prompt-level bootstrap (2{,}000 resamples), since the 8 positions of one prompt
+are correlated.
+
+\section{Results}
+\label{sec:results}
+
+\begin{table}[t]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llccl}
+\toprule
+Test & Criterion (pass) & Qwen-0.5B & TinyLlama-1.1B & Verdict\\
+\midrule
+v20 oracle, trunc.\ 4 bits & cert.\ rate ($\ge$95) & 4.7 [3.3, 6.0] & 12.1 [9.7, 14.7] & fail\\
+\quad coarse argmax $=$ reference & (diagnostic) & 91.7 & 93.2 & ---\\
+v20 oracle, RTN 4 bits & cert.\ rate ($\ge$95) & 18.6 [15.2, 21.7] & 26.5 [23.2, 29.8] & fail\\
+\quad coarse argmax $=$ reference & (diagnostic) & 97.3 & 97.2 & ---\\
+v21a MIPS tree & mean / P95 $\rho$ ($\le$15 / 30) & 110.9 / 110.9 & 106.5 / 106.5 & fail\\
+v21b dim.-adaptive & mean / P95 $\rho$ ($\le$25 / 40) & 82.6 / 99.0 & 99.8 / 100.3 & fail\\
+v21c SVD basis & mean / P95 $\rho$ ($\le$25 / 40) & 97.9 / 98.9 & 98.8 / 100.1 & fail\\
+v22 head, BF16 out & refine ($\le$5) & 7.2 [5.4, 9.2] & 7.3 [5.9, 9.0] & fail\\
+v23 head, FP32 out & refine ($\le$1) & 0.68 [0.29, 1.17] & 1.76 [1.07, 2.54] & met / not met\\
+v23 head, FP32 out & latency criteria & n.e. & n.e. & stopped\\
+\midrule
+native BF16 head $\ne$ exact & (diagnostic) & 0.88 [0.39, 1.46] & 0.88 [0.39, 1.46] & ---\\
+\bottomrule
+\end{tabular}
+\caption{Held-out results in percent, mean [95\% prompt-bootstrap interval], 1{,}024
+positions per model. All tests produced zero false certificates and, where a final
+token is returned (v21--v23), zero mismatches with the exact reference after
+refinement; positions the v20 oracle does not certify are counted as uncertified,
+not as errors. n.e.: not evaluated; the preregistered latency criteria for v23
+(overhead $\le$10\% over the native head, $\le$5\% over uncertified FP32 output, and
+comparison with selective-FP32 baselines) required a fused kernel, and the stopping
+rule ended kernel work once TinyLlama missed the refinement criterion. The identical
+native mismatch rates are a coincidence (9 positions each, in different prompts).}
+\label{tab:main}
+\end{table}
+
+Table~\ref{tab:main} summarizes the held-out evaluation; development results on 256
+Qwen positions agree (v20 3.5\%, v21a 110.9\%, v21b 83.4\%, v22 10.2\%).
+
+\paragraph{v20: the oracle ceiling is far below target.} The oracle knows the true
+coordinate errors $r^\star=|h-\hat h|$, yet certifies at most 26.5\% of positions,
+although the coarse argmax already equals the reference at 92--97\% of them. The
+gap is therefore a property of the box representation, not of the quantizer's
+accuracy. The rigorous re-verification classifies all 4{,}096 oracle decisions
+(two models, two quantizers) as proven accept or proven reject, with none
+unresolved, so the measured rates are the mathematical oracle rates. The median
+headroom $s^\star$ is 0.20 (Qwen) and 0.23 (TinyLlama) with truncation and
+0.37/0.40 with rounding: the oracle radius would have to shrink by a factor of
+2.5--5 at the median position before certification succeeds. In an exploratory
+run on Qwen development data, dropping only 1, 2 or 3 bits gives oracle rates of
+59.8\%, 37.1\% and 19.5\%, so even a mild one-bit mantissa truncation is not
+certifiable this way. By Theorem~\ref{thm:oracle-ceiling}, no error propagation
+algorithm with the same center and box representation can do better.
+
+\paragraph{v21: exact search over the LM head does not prune.} The tree visits
+99.7\% (Qwen) and 100\% (TinyLlama) of rows, and its metadata pushes $\rho$ above
+one. Dimension-adaptive pruning removes rows only after most coordinates are read:
+in a calibrated order it saves 17\% on Qwen and nothing on TinyLlama; rotating to
+the SVD basis is no better. In dimensions 896--2{,}048 these bounds are too loose
+relative to the gap between the top logit and the bulk of the vocabulary. This
+rejects the designs we tested, not every exact search algorithm.
+
+\paragraph{v22--v23: the head certificate is sound but refines too often.} In v22
+the head is a BF16 matrix product on MPS whose BF16 output is then widened; in v23
+it is an FP32 matrix product on MPS whose operands are the BF16 weights and hidden
+state converted exactly to FP32. Across $1{,}024\,V$ logits per model and variant, no
+computed logit left its enclosure, and no returned token differed from the exact
+reference. With BF16 output, 7\% of positions need refinement; in an exploratory
+ablation on development data, replacing the norm envelope $A_i$ by the exact
+$\sum_k|w_{ik}h_k|$ changes this only from 10.2\% to 9.4\%, so the BF16 output
+rounding term dominates. With FP32 output the rate falls to 0.68\% and 1.76\%, with
+1.01--1.02 candidates per position on average. For Qwen the point estimate meets
+the 1\% criterion but the interval reaches 1.17\%, so we do not claim a population
+rate below 1\%. A refinement rate is not a latency: an unfused development
+prototype added 44\% latency to the BF16 head, and no fused kernel was built.
+
+\input{head}
+
+\section{Limitations}
+Two small models, one hardware platform, and one quantization family (mantissa
+truncation or rounding of all Transformer projections) were tested. The oracle
+ceiling covers coordinate-wise symmetric boxes with the coarse hidden state as
+center; certificates that exploit error correlations, other centers, or other
+quantizers are not excluded. The search experiments test specific bounds; v21c is
+an SVD ablation, not a full FEXIPRO implementation. Byte ratios are logical, not
+measured memory traffic. The head certificate is conditionally sound under the
+stated arithmetic model; conformance of the MPS kernel to that model is supported
+only by zero observed violations, not proven. No latency claim is made for v23. The preregistrations were not deposited in a
+public registry before the experiments.
+
+\section{Conclusion}
+Across two pretrained language models, the evaluated symmetric-box certificates and
+exact-search screening methods fail to meet their preregistered feasibility
+thresholds. The oracle ceiling identifies a representation-level limitation that no
+error-propagation algorithm with the same center can overcome, and its rigorous
+verification leaves no unresolved positions. FP32 output substantially reduces the
+refinement frequency of fixed-hidden-state greedy-head certification, although it
+does not satisfy the preregistered criterion on both models. Practical latency
+improvements and end-to-end numerical reproducibility remain unestablished. We
+release the preregistrations and code so that others can run the oracle test on
+their own quantizer before investing in a full certification pipeline.
+
+\paragraph{Reproducibility.} Scripts, preregistration files, and raw JSON results
+are in the accompanying repository. Environment: macOS 27.0 on Apple M4 (16\,GB),
+PyTorch 2.15.0 (MPS), Transformers 5.24.1, NumPy 2.4.6, Datasets 5.2.0. Model
+revisions: Qwen2.5-0.5B-Instruct \texttt{7ae5576}, TinyLlama-1.1B-Chat-v1.0
+\texttt{fe8a4ea}. All decoding is greedy; the bootstrap uses seed 0.
+
+\paragraph{Use of AI tools.} Experiment design, threshold setting, literature
+checks and an internal review were carried out with the help of ChatGPT;
+experiments were implemented and run with the help of the Claude Code agent. All
+results were produced by the released scripts, and the author takes responsibility
+for the content.
+
+\bibliographystyle{plain}
+\bibliography{references}
+\end{document}

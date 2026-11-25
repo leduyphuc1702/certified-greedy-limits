@@ -1,0 +1,18 @@
+{
+ "h_trunc": {
+  "proven_accept": 48,
+  "proven_reject": 976,
+  "unresolved": 0,
+  "n": 1024,
+  "ceiling_upper": 0.046875,
+  "coarse_argmax_agree": 0.9169921875
+ },
+ "h_rtn": {
+  "proven_accept": 190,
+  "proven_reject": 834,
+  "unresolved": 0,
+  "n": 1024,
+  "ceiling_upper": 0.185546875,
+  "coarse_argmax_agree": 0.97265625
+ }
+}

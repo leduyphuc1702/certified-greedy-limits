@@ -1,0 +1,79 @@
+\section{Certified Greedy Head}
+\label{sec:certified-head}
+
+We now consider numerical correctness of the output projection for a fixed hidden state, rather than certification across the Transformer body. Let $s_i=w_i^\top h$ be the exact-real logit and $S_i=\sum_k|w_{ik}h_k|$.
+
+\paragraph{Arithmetic assumptions.}
+The bias-free head takes finite BF16-representable operands, converted exactly to FP32. Products and sums use round-to-nearest FP32 arithmetic, with arbitrary ordering, conventional reduction trees, and optional fused multiply-add (FMA), provided each product contributes once and its path contains at most $d$ rounded operations. We exclude overflow, underflow invalidating the relative-error model, reduced-precision accumulation, operand truncation, and fast-math approximations violating these assumptions. The FP32-out variant returns the accumulation directly; the BF16-out variant rounds it once to BF16 under the same relative-error assumptions.
+
+\begin{proposition}[Logit error bounds]
+\label{prop:logit-error}
+Let $u_{32}=2^{-24}$, $u_b=2^{-8}$ and $\gamma_d=du_{32}/(1-du_{32})$, assuming $du_{32}<1$. If $z_i$ is the FP32 accumulation, then
+\begin{equation}
+    |z_i-s_i|\leq\gamma_d S_i.
+    \label{eq:fp32-error}
+\end{equation}
+If $\hat s_i=\operatorname{RN}_{\mathrm{BF16}}(z_i)$ is the BF16 output, then
+\begin{equation}
+    |\hat s_i-s_i|
+    \leq\gamma_d S_i+
+    \frac{u_b}{1-u_b}|\hat s_i|.
+    \label{eq:bf16-error-observable}
+\end{equation}
+\end{proposition}
+
+\begin{proof}
+By the standard floating-point model \cite{higham2002accuracy}, each product contribution is multiplied along its reduction path by at most $d$ factors $(1+\delta_\ell)$ with $|\delta_\ell|\leq u_{32}$. The classical product bound gives $|\prod_\ell(1+\delta_\ell)-1|\leq\gamma_d$. Expanding the reduction, including FMA where applicable, yields $z_i=\sum_k w_{ik}h_k(1+\theta_k)$ with $|\theta_k|\leq\gamma_d$. Hence
+\[
+    |z_i-s_i|\leq\sum_k|w_{ik}h_k||\theta_k|
+    \leq\gamma_d S_i.
+\]
+For BF16 output, $\hat s_i=z_i(1+\eta_i)$ with $|\eta_i|\leq u_b$. Therefore $|z_i|\leq|\hat s_i|/(1-u_b)$ and
+\[
+    |\hat s_i-s_i|
+    \leq\gamma_d S_i+u_b|z_i|
+    \leq\gamma_d S_i+
+    \frac{u_b}{1-u_b}|\hat s_i|.
+\]
+\end{proof}
+
+\paragraph{Computable radii.}
+An additional dense projection is unnecessary because H\"older's inequality gives
+\begin{equation}
+    S_i\leq A_i:=
+    \min\{\|w_i\|_2\|h\|_2,\,
+           \|w_i\|_\infty\|h\|_1\}.
+    \label{eq:norm-envelope}
+\end{equation}
+Row norms can be precomputed. Our preregistered BF16-out experiment (v22) uses the conservative radius
+\begin{equation}
+    e_i^{(22)}=(1+u_b)\gamma_d A_i+
+    \frac{u_b}{1-u_b}|\hat s_i|,
+    \label{eq:v22-radius}
+\end{equation}
+where the factor $(1+u_b)$ is unnecessary but retained for protocol consistency. The FP32-out experiment (v23) removes the output-rounding term:
+\begin{equation}
+    e_i^{(23)}=\gamma_d A_i.
+    \label{eq:v23-radius}
+\end{equation}
+
+\begin{lemma}[Safe candidate elimination]
+\label{lem:safe-candidates}
+Let $\tilde s_i$ denote a computed logit and $e_i$ a valid error radius. Define $L_i=\tilde s_i-e_i$ and $U_i=\tilde s_i+e_i$. For any incumbent $t$, both candidate sets
+\begin{equation}
+    \mathcal C=\{i:U_i\geq\max_jL_j\}
+    \subseteq
+    \mathcal C_t=\{i:U_i\geq L_t\}
+    \label{eq:certified-candidates}
+\end{equation}
+contain every exact-real maximizer. A singleton candidate set certifies its unique token; otherwise, exact comparison within the retained set suffices.
+\end{lemma}
+
+\begin{proof}
+For any exact maximizer $i^\star$, enclosure validity gives $U_{i^\star}\geq s_{i^\star}\geq s_j\geq L_j$ for every $j$. Thus $U_{i^\star}\geq\max_jL_j\geq L_t$, proving membership in both sets. Since every exact maximizer is retained, exact comparison and the prescribed tie-breaking rule recover the reference decision.
+\end{proof}
+
+\paragraph{Refinement and scope.}
+The implemented certificate retains numerically plausible maximizers and refines them only when more than one candidate remains. Norms, radii, interval endpoints, and refinement comparisons require conservative numerical enclosures; unresolved FP64 comparisons require exact arithmetic. A single upward rounding operation is not generally sufficient to enclose accumulated norm-computation errors.
+
+Unlike heuristic margin-triggered recomputation \cite{du2026precision}, acceptance is sufficient for exact-real greedy correctness under the stated arithmetic model. The method still performs a dense projection and neither establishes sublinear access nor certifies the Transformer body. Different hidden states may yield different certified tokens. Absence of observed MPS enclosure violations supports, but does not prove, backend conformance. The FP32-out experiment therefore isolates a numerical remedy for output rounding; its refinement frequency alone establishes neither latency improvement nor end-to-end reproducibility.

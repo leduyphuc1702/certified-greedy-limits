@@ -1,0 +1,20 @@
+\section{Related Work}
+\label{sec:related-work}
+
+\paragraph{Lossless compression.}
+ZipNN \cite{hershcovitch2025zipnn} and DFloat11 \cite{zhang2025dfloat11} exploit redundancy in neural network parameters without changing their represented values. DFloat11 additionally supports online GPU decompression. Our objective differs: we investigate whether partial numerical information can suffice to certify a greedy decision without full evaluation.
+
+\paragraph{Quantized speculative decoding.}
+QSpec \cite{zhao2025qspec} combines complementary quantization schemes for drafting and verification. QuantSpec \cite{tiwari2025quantspec} uses hierarchical KV-cache quantization, while SPEQ \cite{zhao2025speq} derives draft parameters from a subset of the original weight bits. These methods retain explicit verification; we investigate whether deterministic certificates can replace it at sufficiently low cost.
+
+\paragraph{Exact inner-product search.}
+Ram and Gray \cite{ram2012mips} introduce geometric tree bounds for maximum inner-product search (MIPS). LEMP \cite{teflioudi2017lemp} supports exact and approximate retrieval, and FEXIPRO \cite{li2017fexipro} combines SVD-based dimensional pruning with integer approximations and other transformations. Our experiments evaluate established bounding principles on pretrained LM heads. The SVD experiment is a FEXIPRO-inspired ablation, not a reproduction of the complete system.
+
+\paragraph{Approximate vocabulary retrieval.}
+Loretz and Hochreiter \cite{loretz2026output} use an HNSW-based output-embedding index to accelerate vocabulary projection. Their results demonstrate the potential of approximate retrieval, whereas our experiments require certification against every vocabulary competitor.
+
+\paragraph{Numerical nondeterminism.}
+Yuan et al.\ \cite{yuan2025nondeterminism} investigate floating-point sources of inference variability. Du et al.\ \cite{du2026precision} mitigate cross-precision divergence through margin-triggered FP32 head recomputation. Our candidate certificate instead provides a conditional numerical guarantee for a fixed hidden state; it does not address divergence originating in the Transformer body.
+
+\paragraph{Certified quantization.}
+Quadapter \cite{zhang2024certified} synthesizes quantization strategies that preserve specified neural network properties. We instead fix the quantized execution and evaluate the feasibility of certifying its greedy decision. Exact minimization of a linear function over a box is the basis of interval bound propagation, whose tightness Mao et al.\ analyze for certified training \cite{mao2024understanding}. Our principal contribution is a preregistered empirical investigation supported by standard box optimization and floating-point error analysis, rather than new general-purpose verification or retrieval algorithms.
