@@ -1,7 +1,7 @@
 # Feasibility Limits of Certified Low-Precision Greedy Decoding
 
 Code, preregistrations and raw results for the preprint
-*Feasibility Limits of Certified Low-Precision Greedy Decoding: A Preregistered Study with an Oracle Ceiling* (Phuc Le, 2026). The LaTeX source is in `paper/`.
+*Feasibility Limits of Certified Low-Precision Greedy Decoding: A Preregistered Study with an Oracle Ceiling* (Phuc Le, 2026), [doi:10.5281/zenodo.24530834](https://doi.org/10.5281/zenodo.24530834). The LaTeX source is in `paper/`.
 
 ## Main results (held-out, 1,024 positions per model)
 
