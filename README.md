@@ -47,6 +47,17 @@ python audit_reference.py
 Run one heavy job at a time; on a 16 GB machine `OMP_NUM_THREADS=4 VECLIB_MAXIMUM_THREADS=4` avoids swapping.
 Development runs: `v20_killtest/oracle_box.py`, then `v21_head_mips/dump_hidden.py` and `killtests.py`, then `v22_certified_head/certified_head.py`.
 
+## Post-hoc analysis (added 2026-11-28, not in the paper, not preregistered)
+
+`paper_eval/margin_detect.py` asks how well a top-2 logit-margin trigger, which sees only the low-precision run, detects the greedy flips caused by dropping 4 mantissa bits in every attention and MLP projection. Run it after `dump.py`; it writes `margin_detect.json`.
+
+| Model, quantizer | Flips | Trigger fires at, to catch all flips | ... to catch 90% | Zero-miss threshold (logits) | Oracle box certificate leaves to recompute |
+|---|---|---|---|---|---|
+| Qwen2.5-0.5B, round-to-nearest | 2.7% | 26.1% | 13.4% | 0.71 | 81.4% |
+| TinyLlama-1.1B, round-to-nearest | 2.8% | 20.0% | 14.5% | 0.37 | 73.5% |
+| Qwen2.5-0.5B, truncation | 8.3% | 62.2% | 27.4% | 2.86 | 95.3% |
+| TinyLlama-1.1B, truncation | 6.8% | 38.7% | 22.3% | 0.97 | 87.9% |
+
 Environment used: macOS 27.0, Apple M4, PyTorch 2.15.0, Transformers 5.24.1, NumPy 2.4.6, Datasets 5.2.0. Model revisions: Qwen2.5-0.5B-Instruct `7ae5576`, TinyLlama-1.1B-Chat-v1.0 `fe8a4ea`.
 
 ## License
